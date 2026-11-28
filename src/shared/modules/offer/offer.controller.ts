@@ -1,10 +1,8 @@
 import { Request, Response } from 'express';
 import { plainToInstance } from 'class-transformer';
-import { StatusCodes } from 'http-status-codes';
 import { inject, injectable } from 'inversify';
 import { Component } from '../../container/component.js';
 import { Controller } from '../../libs/rest/controller.js';
-import { HttpError } from '../../libs/rest/http-error.js';
 import { HttpMethod } from '../../libs/rest/route.interface.js';
 import { toResponse, toResponseList } from '../../libs/rest/response.js';
 import { ValidateDataMiddleware } from '../../libs/rest/validate-data.middleware.js';
@@ -15,26 +13,34 @@ import { UpdateOfferDto } from './update-offer.dto.js';
 import { City } from './offer.entity.js';
 import { OfferService } from './offer.service.js';
 import { OfferRdo, OfferSummaryRdo } from './rdo/offer.rdo.js';
+import { DocumentExistsMiddleware } from '../../libs/rest/document-exists.middleware.js';
+import { UserService } from '../user/user.service.js';
 
 @injectable()
 export class OfferController extends Controller {
-  constructor(@inject(Component.OfferService) private readonly offers: OfferService) {
+  constructor(
+    @inject(Component.OfferService) private readonly offers: OfferService,
+    @inject(Component.UserService) users: UserService,
+  ) {
     super();
+    const offerExists = new DocumentExistsMiddleware(offers, 'id', 'params', 'Offer');
+    const userExists = new DocumentExistsMiddleware(users, 'userId', 'query', 'User');
+    const optionalUser = new DocumentExistsMiddleware(users, 'userId', 'query', 'User', true);
     const id = new ValidateObjectIdMiddleware('id');
     const query = new ValidateDataMiddleware(OfferQueryDto, 'query');
     const favoriteQuery = new ValidateDataMiddleware(FavoriteQueryDto, 'query');
-    this.addRoute({ path: '/', method: HttpMethod.Get, handler: this.index, middleware: [query] });
+    this.addRoute({ path: '/', method: HttpMethod.Get, handler: this.index, middleware: [query, optionalUser] });
     this.addRoute({ path: '/premium', method: HttpMethod.Get, handler: this.premium,
-      middleware: [new ValidateDataMiddleware(PremiumQueryDto, 'query')] });
-    this.addRoute({ path: '/favorites', method: HttpMethod.Get, handler: this.favorites, middleware: [favoriteQuery] });
+      middleware: [new ValidateDataMiddleware(PremiumQueryDto, 'query'), optionalUser] });
+    this.addRoute({ path: '/favorites', method: HttpMethod.Get, handler: this.favorites, middleware: [favoriteQuery, userExists] });
     this.addRoute({ path: '/', method: HttpMethod.Post, handler: this.create,
-      middleware: [new ValidateDataMiddleware(CreateOfferDto)] });
-    this.addRoute({ path: '/:id', method: HttpMethod.Get, handler: this.show, middleware: [id, query] });
+      middleware: [new ValidateDataMiddleware(CreateOfferDto), new DocumentExistsMiddleware(users, 'author', 'body', 'User')] });
+    this.addRoute({ path: '/:id', method: HttpMethod.Get, handler: this.show, middleware: [id, query, offerExists, optionalUser] });
     this.addRoute({ path: '/:id', method: HttpMethod.Patch, handler: this.update,
-      middleware: [id, new ValidateDataMiddleware(UpdateOfferDto)] });
-    this.addRoute({ path: '/:id', method: HttpMethod.Delete, handler: this.delete, middleware: [id] });
-    this.addRoute({ path: '/:id/favorite', method: HttpMethod.Post, handler: this.addFavorite, middleware: [id, favoriteQuery] });
-    this.addRoute({ path: '/:id/favorite', method: HttpMethod.Delete, handler: this.removeFavorite, middleware: [id, favoriteQuery] });
+      middleware: [id, new ValidateDataMiddleware(UpdateOfferDto), offerExists] });
+    this.addRoute({ path: '/:id', method: HttpMethod.Delete, handler: this.delete, middleware: [id, offerExists] });
+    this.addRoute({ path: '/:id/favorite', method: HttpMethod.Post, handler: this.addFavorite, middleware: [id, favoriteQuery, offerExists, userExists] });
+    this.addRoute({ path: '/:id/favorite', method: HttpMethod.Delete, handler: this.removeFavorite, middleware: [id, favoriteQuery, offerExists, userExists] });
   }
 
   private async index(request: Request, response: Response): Promise<void> {
@@ -53,9 +59,6 @@ export class OfferController extends Controller {
 
   private async show(request: Request, response: Response): Promise<void> {
     const offer = await this.offers.findById(request.params.id, request.query.userId as string | undefined);
-    if (!offer) {
-      throw new HttpError(StatusCodes.NOT_FOUND, 'Offer not found');
-    }
     this.ok(response, toResponse(OfferRdo, offer));
   }
 

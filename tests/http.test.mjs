@@ -1,3 +1,6 @@
+import { mkdtemp, rm, readFile, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -22,7 +25,8 @@ class FailingController extends Controller {
 test('Express handles resource routes and synchronous/asynchronous failures', { skip: !process.env.TEST_DB_URI }, async () => {
   const uri = new URL(process.env.TEST_DB_URI);
   uri.pathname = `/six_cities_http_test_${randomUUID()}`;
-  const config = { PORT: 0, DB_URI: uri.toString(), SALT: 'integration-test-secret' };
+  const uploadDirectory = await mkdtemp(join(tmpdir(), 'six-cities-http-'));
+  const config = { UPLOAD_DIRECTORY: uploadDirectory, PORT: 0, DB_URI: uri.toString(), SALT: 'integration-test-secret' };
   const logs = [];
   const container = createRestContainer();
   container.rebind(Component.Config).toConstantValue({ get: (key) => config[key] });
@@ -78,6 +82,41 @@ test('Express handles resource routes and synchronous/asynchronous failures', { 
     assert.equal((await request('/auth/login', 'GET', undefined, `${token}tampered`)).status, 401);
     assert.equal((await request('/users', 'POST', ownerData, token)).status, 409);
 
+    const png = await readFile(new URL('../mocks/avatar.png', import.meta.url));
+    async function upload(userId, { data = png, type = 'image/png', filename = 'avatar.exe', field = 'avatar', count = 1 } = {}) {
+      const form = new FormData();
+      for (let index = 0; index < count; index++) {
+        form.append(field, new Blob([data], { type }), filename);
+      }
+      const response = await fetch(`${base}/users/${userId}/avatar`, { method: 'POST', body: form });
+      return { status: response.status, body: await response.json() };
+    }
+    const avatar = await upload(owner.body.id);
+    assert.equal(avatar.status, 200);
+    assert.match(avatar.body.avatar, /^\/uploads\/[A-Za-z0-9_-]{21}\.png$/);
+    assert.equal(avatar.body.passwordHash, undefined);
+    const staticResponse = await fetch(`${base}${avatar.body.avatar}`);
+    assert.equal(staticResponse.status, 200);
+    assert.match(staticResponse.headers.get('content-type'), /image\/png/);
+    assert.equal(staticResponse.headers.get('x-content-type-options'), 'nosniff');
+    assert.deepEqual(Buffer.from(await staticResponse.arrayBuffer()), png);
+    assert.equal((await UserModel.findById(owner.body.id)).avatar, avatar.body.avatar);
+    const anotherAvatar = await upload(owner.body.id);
+    assert.equal(anotherAvatar.status, 200);
+    assert.notEqual(anotherAvatar.body.avatar, avatar.body.avatar);
+    assert.equal((await upload(owner.body.id, { count: 0 })).status, 400);
+    assert.equal((await upload(owner.body.id, { type: 'text/plain' })).status, 415);
+    assert.equal((await upload(owner.body.id, { field: 'wrong' })).status, 400);
+    assert.equal((await upload(owner.body.id, { count: 2 })).status, 400);
+    assert.equal((await upload(owner.body.id, { data: Buffer.alloc(5 * 1024 * 1024 + 1) })).status, 413);
+    assert.equal((await upload('invalid')).status, 400);
+    assert.equal((await upload('000000000000000000000000')).status, 404);
+    const filesAfterFailures = await readdir(uploadDirectory);
+    assert.equal(filesAfterFailures.length, 2, 'Failed requests leave no uploaded files');
+    assert.equal((await request('/uploads/missing.png')).status, 404);
+    assert.equal((await request('/offers', 'POST', {
+      title: 'bad', author: '000000000000000000000000',
+    })).status, 400, 'Validation runs before database existence checks');
     const guestData = { name: 'Guest', email: 'guest@example.com', password: 'secret456', type: 'regular' };
     const guest = await request('/users', 'POST', guestData);
     const data = {
@@ -142,6 +181,7 @@ test('Express handles resource routes and synchronous/asynchronous failures', { 
     assert.equal((await request('/offers/premium?city=London')).status, 400);
     assert.equal((await request('/offers/premium')).status, 400);
     assert.equal((await request('/offers?userId=bad')).status, 400);
+    assert.equal((await request('/offers/favorites?userId=000000000000000000000000')).status, 404);
     assert.equal((await request(`/offers/${id}/favorite?userId=bad`, 'POST')).status, 400);
     const removed = await request(`/offers/${id}`, 'DELETE');
     assert.equal(removed.status, 204);
@@ -151,5 +191,6 @@ test('Express handles resource routes and synchronous/asynchronous failures', { 
   } finally {
     await mongoose.connection.dropDatabase();
     await application.close();
+    await rm(uploadDirectory, { recursive: true, force: true });
   }
 });

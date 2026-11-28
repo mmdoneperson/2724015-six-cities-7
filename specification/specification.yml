@@ -93,14 +93,22 @@ paths:
                 $ref: '#/components/schemas/User'
         '401':
           $ref: '#/components/responses/Unauthorized'
-  /users/avatar:
+  /users/{userId}/avatar:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Id'
     post:
       tags: [Users]
       operationId: uploadAvatar
-      summary: Загрузить аватар текущего пользователя (планируется)
-      description: Пользователь определяется по токену. Новый аватар заменяет предыдущий
-      security:
-        - bearerAuth: []
+      summary: Загрузить аватар пользователя
+      description: >-
+        Пользователь определяется по userId. Поле avatar содержит один JPEG или PNG
+        размером не более 5 МиБ. Ответ содержит путь /uploads/<уникальное имя>.
+        На текущем этапе запрос доступен анонимным клиентам.
+      security: []
       requestBody:
         required: true
         content:
@@ -126,8 +134,10 @@ paths:
                 $ref: '#/components/schemas/User'
         '400':
           $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          description: Файл превышает лимит 5 МиБ
         '415':
           description: Формат изображения не поддерживается
           content:

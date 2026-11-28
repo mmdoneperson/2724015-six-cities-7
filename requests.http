@@ -1,0 +1,30 @@
+@baseUrl = http://localhost:3000
+
+### Создать пользователя (скопируйте id из ответа в userId)
+POST {{baseUrl}}/users
+Content-Type: application/json
+
+{
+  "name": "Alice",
+  "email": "alice@example.com",
+  "password": "secret123",
+  "type": "regular"
+}
+
+### Замените значением id созданного пользователя
+@userId = 000000000000000000000000
+
+### Загрузить PNG-аватар (JPEG передаётся с Content-Type: image/jpeg)
+POST {{baseUrl}}/users/{{userId}}/avatar
+Content-Type: multipart/form-data; boundary=AvatarBoundary
+
+--AvatarBoundary
+Content-Disposition: form-data; name="avatar"; filename="avatar.png"
+Content-Type: image/png
+
+< ./mocks/avatar.png
+--AvatarBoundary--
+
+### Получить загруженный файл — подставьте путь avatar из ответа загрузки
+@avatarPath = /uploads/replace-with-returned-filename.png
+GET {{baseUrl}}{{avatarPath}}

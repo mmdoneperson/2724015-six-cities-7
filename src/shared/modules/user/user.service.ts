@@ -2,9 +2,15 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { injectable } from 'inversify';
 import { CreateUserDto } from './create-user.dto.js';
 import { UserModel } from './user.entity.js';
+import { HttpError } from '../../libs/rest/http-error.js';
+import { DocumentExists } from '../../libs/rest/document-exists.interface.js';
 
 @injectable()
-export class UserService {
+export class UserService implements DocumentExists {
+  public async exists(id: string): Promise<boolean> {
+    return Boolean(await UserModel.exists({ _id: id }));
+  }
+
   public async create(dto: CreateUserDto) {
     const salt = randomBytes(16).toString('hex');
     const passwordHash = `${salt}:${scryptSync(dto.password, salt, 64).toString('hex')}`;
@@ -12,6 +18,14 @@ export class UserService {
       name: dto.name, email: dto.email, avatar: dto.avatar, type: dto.type, passwordHash,
     });
     return this.findById(user.id);
+  }
+
+  public async updateAvatar(id: string, avatar: string) {
+    const user = await UserModel.findByIdAndUpdate(id, { $set: { avatar } }, { new: true }).exec();
+    if (!user) {
+      throw new HttpError(404, 'User not found');
+    }
+    return user;
   }
 
   public async findById(id: string) {

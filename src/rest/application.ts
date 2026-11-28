@@ -1,3 +1,4 @@
+import { resolve as resolvePath } from 'node:path';
 import { CommentController } from '../shared/modules/comment/comment.controller.js';
 import express, { Express } from 'express';
 import { Server } from 'node:http';
@@ -34,6 +35,9 @@ export class Application {
 
   private registerMiddleware(): void {
     this.app.disable('x-powered-by');
+    this.app.use('/uploads', express.static(resolvePath(this.config.get('UPLOAD_DIRECTORY')), {
+      dotfiles: 'deny', index: false, setHeaders: (response) => response.setHeader('X-Content-Type-Options', 'nosniff'),
+    }));
     this.app.use(express.json());
     this.app.use(authenticate(this.auth));
   }

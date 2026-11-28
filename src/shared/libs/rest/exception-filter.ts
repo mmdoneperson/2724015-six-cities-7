@@ -1,3 +1,4 @@
+import { MulterError } from 'multer';
 import { ErrorRequestHandler } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { inject, injectable } from 'inversify';
@@ -17,7 +18,10 @@ export class ExceptionFilter implements ExceptionFilterInterface {
     }
     let status = StatusCodes.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
-    if (error instanceof HttpError) {
+    if (error instanceof MulterError) {
+      status = error.code === 'LIMIT_FILE_SIZE' ? StatusCodes.REQUEST_TOO_LONG : StatusCodes.BAD_REQUEST;
+      message = error.message;
+    } else if (error instanceof HttpError) {
       status = error.statusCode;
       message = error.message;
     } else if (error instanceof SyntaxError && 'status' in error && error.status === StatusCodes.BAD_REQUEST) {

@@ -2,6 +2,15 @@ import { Schema } from 'convict';
 import { RestSchema } from './rest-schema.type.js';
 
 export const restSchema: Schema<RestSchema> = {
+  UPLOAD_DIRECTORY: {
+    format: (value: string) => {
+      if (typeof value !== 'string' || !value.trim()) {
+        throw new Error('Укажите директорию для пользовательских файлов');
+      }
+    },
+    default: null,
+    env: 'UPLOAD_DIRECTORY',
+  },
   PORT: {
     format: 'server-port',
     default: null,

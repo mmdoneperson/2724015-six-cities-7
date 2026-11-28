@@ -8,6 +8,7 @@ import { CreateOfferDto } from './create-offer.dto.js';
 import { UpdateOfferDto } from './update-offer.dto.js';
 import { SetFavoriteDto } from './set-favorite.dto.js';
 import { City, FavoriteModel, OfferModel } from './offer.entity.js';
+import { DocumentExists } from '../../libs/rest/document-exists.interface.js';
 
 const summaryFields = {
   price: 1, title: 1, type: 1, isFavorite: 1, date: 1, city: 1,
@@ -15,7 +16,11 @@ const summaryFields = {
 };
 
 @injectable()
-export class OfferService {
+export class OfferService implements DocumentExists {
+  public async exists(id: string): Promise<boolean> {
+    return Boolean(await OfferModel.exists({ _id: id }));
+  }
+
   private computedFields(userId?: string): PipelineStage[] {
     return [
       { $lookup: {
